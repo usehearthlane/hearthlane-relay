@@ -4,7 +4,7 @@ info:
   seq: 1
 
 http:
-  method: POST
+  method: PUT
   url: http://localhost:8080/devices/hearthlance-device-1/location
   headers:
     - name: Content-Type
