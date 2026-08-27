@@ -1,0 +1,6 @@
+# Go toolchain caches (managed by the OpenCode dev environment)
+.cache/
+.tmp/
+
+# Relay default state file (contains sensitive location data)
+state.json

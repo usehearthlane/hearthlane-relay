@@ -1,0 +1,74 @@
+services:
+  opencode:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    stdin_open: true
+    tty: true
+
+    working_dir: /workspace
+
+    env_file:
+      - ${HOME}/.config/opencode/9router.env
+      - ${HOME}/.config/opencode/go.env
+
+    environment:
+      HOME: /home/opencode
+      TERM: xterm-256color
+      COLORTERM: truecolor
+
+      DISPLAY: ${DISPLAY}
+
+      SSH_AUTH_SOCK: /ssh-agent
+
+      GIT_TERMINAL_PROMPT: "0"
+      GOTMPDIR: /workspace/.tmp/go
+      GOCACHE: /workspace/.cache/go-build
+      GOPATH: /workspace/.cache/go
+
+      RELEASE_STORE_FILE: /run/secrets/hearthlane_playstore.jks
+      RELEASE_STORE_PASSWORD: ${RELEASE_STORE_PASSWORD}
+      RELEASE_KEY_ALIAS: ${RELEASE_KEY_ALIAS}
+      RELEASE_KEY_PASSWORD: ${RELEASE_KEY_PASSWORD}
+      GH_TOKEN: ${GH_TOKEN}
+
+    volumes:
+      # Current repository only.
+      - .:/workspace
+
+      # Release
+      - ${HOME}/.config/hearthlane/playstore.jks:/run/secrets/hearthlane_playstore.jks:ro
+      
+      # Shared OpenCode configuration.
+      - ${HOME}/.config/opencode:/home/opencode/.config/opencode
+
+      # Persistent OpenCode sessions/data
+      - opencode-share:/home/opencode/.local/share/opencode
+      - opencode-state:/home/opencode/.local/state/opencode
+
+      # SSH agent only; private keys are not mounted.
+      - ${SSH_AUTH_SOCK}:/ssh-agent
+
+      # SSH aliases and known hosts.
+      - ${HOME}/.ssh/config:/home/opencode/.ssh/config:ro
+      - ${HOME}/.ssh/known_hosts:/home/opencode/.ssh/known_hosts:ro
+
+      # X11 clipboard.
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+
+    security_opt:
+      - no-new-privileges:true
+
+    cap_drop:
+      - ALL
+
+    tmpfs:
+      - /tmp:rw,exec,nosuid,nodev,size=512m,mode=1777
+      - /run:rw,nosuid,nodev,noexec,size=64m,mode=0755
+
+    restart: "no"
+
+volumes:
+  opencode-share:
+  opencode-state:
