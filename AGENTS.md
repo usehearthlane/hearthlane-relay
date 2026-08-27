@@ -10,9 +10,9 @@ O projeto é **independente** do repositório do Hearthlane. O Hearthlane é ape
 
 ## Estado atual
 
-Servidor mínimo **implementado** (Fase 1), também com persistência (Fase 2), autenticação Bearer (Fase 3) e testes (Fase 4). O relay é escrito em Go usando apenas a biblioteca padrão: `net/http`, `encoding/json`, `os`, `sync`, `time` e `crypto/subtle`. Pendentes: Fase 5 (deploy) e Fase 6 (integração Hearthlane).
+Servidor mínimo **implementado** (Fase 1), também com persistência (Fase 2), autenticação Bearer (Fase 3) e testes (Fase 4). Arquivos de deploy Docker/Compose criados em `deploy/` (Fase 5). O relay é escrito em Go usando apenas a biblioteca padrão: `net/http`, `encoding/json`, `os`, `sync`, `time` e `crypto/subtle`. Pendente: deploy real no homelab e Fase 6 (integração Hearthlane).
 
-(NOTA: o `Dockerfile` e o `compose.yml` presentes na raiz pertencem ao ambiente de desenvolvimento do OpenCode, não ao relay. Não devem ser tratados como infraestrutura do relay nem editados como parte deste projeto.)
+(NOTA: o `Dockerfile` e o `compose.yml` presentes na raiz pertencem ao ambiente de desenvolvimento do OpenCode, não ao relay. Não devem ser tratados como infraestrutura do relay nem editados como parte deste projeto. A infraestrutura de deploy do relay vive em `deploy/`.)
 
 ## Limites de escopo
 

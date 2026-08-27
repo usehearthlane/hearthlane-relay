@@ -1,0 +1,5 @@
+.cache/
+.tmp/
+.git/
+state.json
+deploy/.env

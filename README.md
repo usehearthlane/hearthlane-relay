@@ -273,6 +273,22 @@ Configuração mínima por environment variables, suficiente para Docker:
 | `RELAY_DATA_FILE` | `state.json` | Caminho do arquivo JSON de persistência |
 | `RELAY_TOKEN` | vazio | Token compartilhado para `Authorization: Bearer`; vazio desabilita autenticação (com aviso no log) |
 
+### Deploy no homelab (Docker / Fase 5)
+
+Arquivos de deploy em `deploy/` (a raiz do repositório não contém infraestrutura do relay — os `Dockerfile`/`compose.yml` da raiz pertencem ao ambiente de desenvolvimento do OpenCode).
+
+```bash
+cd deploy
+# definir o token (nunca commitar secrets)
+echo 'RELAY_TOKEN=altere-me' > .env
+docker compose up -d --build
+```
+
+- Imagem multi-stage (build Go → runtime Alpine), roda como usuário **não-root** (UID 10001).
+- O estado persiste no volume nomeado `relay-data`, montado em `/data/state.json` (sobrevive a restart/recreate; a última localização volta após reinício).
+- `restart: unless-stopped`; porta publicada `8080:8080` — o controle de exposição da rede continua sendo responsabilidade da operação (LAN/Tailscale, firewall).
+- O compose falha ao subir se `RELAY_TOKEN` não estiver definido (`${RELAY_TOKEN:?}`).
+
 ## 19. Decisões arquiteturais
 
 Decisões registradas (não reverter sem justificativa e registro):
@@ -308,10 +324,11 @@ Decisões registradas (não reverter sem justificativa e registro):
 29. Arquivo de estado corrompido/inválido na inicialização faz o relay falhar ao iniciar — nunca apaga os dados silenciosamente.
 30. Configuração mínima por environment variables (`RELAY_BIND`, `RELAY_PORT`, `RELAY_DATA_FILE`, `RELAY_TOKEN`).
 31. Endpoint de health não foi adicionado: o contrato documentado define exatamente 4 endpoints.
+32. Arquivos de deploy (Fase 5) ficam em `deploy/` para não conflitar com o `Dockerfile`/`compose.yml` do ambiente de desenvolvimento na raiz; o relay opera como binário ou contêiner não-root, com volume persistente.
 
 ## 20. Roadmap inicial
 
-Fases 0 (documentação), 1 (servidor mínimo), 2 (persistência), 3 (segurança) e 4 (testes) concluídas. Pendentes: Fase 5 (deploy) e Fase 6 (integração Hearthlane).
+Fases 0 (documentação), 1 (servidor mínimo), 2 (persistência), 3 (segurança), 4 (testes) concluídas e Fase 5 (deploy) com os arquivos Docker/Compose criados. Pendente: deploy real no homelab e Fase 6 (integração Hearthlane).
 
 ### Fase 0 — Documentação e contrato (concluída)
 - `AGENTS.md`
@@ -345,10 +362,10 @@ Fases 0 (documentação), 1 (servidor mínimo), 2 (persistência), 3 (segurança
 - Concorrência
 - Recuperação após restart
 
-### Fase 5 — Deploy (pendente)
-- Docker
-- docker-compose
-- Volume persistente
+### Fase 5 — Deploy (arquivos concluídos; pendente deploy no homelab)
+- Docker (`deploy/Dockerfile`)
+- Docker Compose (`deploy/compose.yml`)
+- Volume persistente (`relay-data`)
 - Configuração (environment variables)
 - Documentação de deploy no homelab
 
@@ -362,13 +379,13 @@ Fases 0 (documentação), 1 (servidor mínimo), 2 (persistência), 3 (segurança
 
 ## 21. Estado atual do projeto
 
-**Este projeto está na Fase 1 concluída**, com persistência (Fase 2), autenticação Bearer (Fase 3) e testes (Fase 4) também implementadas nesta sessão.
+**Este projeto está na Fase 1 concluída**, com persistência (Fase 2), autenticação Bearer (Fase 3), testes (Fase 4) e os arquivos de deploy (Fase 5) também entregues.
 
 - O servidor HTTP está implementado em Go (biblioteca padrão), com os 4 endpoints do contrato.
 - Estado em memória é a fonte de verdade das consultas; persistência atômica em arquivo JSON.
 - Autenticação por `Authorization: Bearer <token>` (token compartilhado via `RELAY_TOKEN`; ver seção 18).
 - Testes abrangentes (unitários, HTTP, persistência, concorrência e privacidade dos logs) passam com `go test -race`.
-- Pendente: deploy no homelab (Fase 5) e integração com o cliente Hearthlane (Fase 6).
+- Deploy via Docker/Compose em `deploy/` (ver seção 18); pendente o deploy real no homelab e a integração com o cliente Hearthlane (Fase 6).
 - O repositório contém somente o relay. O `Dockerfile` e o `compose.yml` na raiz pertencem ao ambiente de desenvolvimento do OpenCode, não ao relay.
 
 O objetivo desta fase foi deixar um servidor mínimo, com o contrato e os limites arquiteturais respeitados, pronto para as próximas fases de deploy e integração.
