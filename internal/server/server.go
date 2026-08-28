@@ -1,7 +1,6 @@
 package server
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -21,7 +20,6 @@ const (
 type Server struct {
 	st     *state.State
 	store  *store.Store
-	token  string
 	logger *log.Logger
 }
 
@@ -33,8 +31,8 @@ type deviceListResponse struct {
 	Devices []state.DeviceSummary `json:"devices"`
 }
 
-func New(st *state.State, sts *store.Store, token string, logger *log.Logger) *Server {
-	return &Server{st: st, store: sts, token: token, logger: logger}
+func New(st *state.State, sts *store.Store, logger *log.Logger) *Server {
+	return &Server{st: st, store: sts, logger: logger}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -43,7 +41,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /devices", s.handleListDevices)
 	mux.HandleFunc("GET /devices/{deviceID}/location", s.handleGetLocation)
 	mux.HandleFunc("PUT /devices/{deviceID}/nickname", s.handlePutNickname)
-	return s.auth(s.logRequests(mux))
+	return s.logRequests(mux)
 }
 
 func (s *Server) handlePutLocation(w http.ResponseWriter, r *http.Request) {
@@ -151,29 +149,6 @@ func validDeviceID(id string) bool {
 		}
 	}
 	return true
-}
-
-func (s *Server) auth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.token != "" && !authorized(r.Header.Get("Authorization"), s.token) {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func authorized(header, token string) bool {
-	const prefix = "Bearer "
-	if !strings.HasPrefix(strings.ToLower(header), strings.ToLower(prefix)) {
-		return false
-	}
-	got := []byte(header[len(prefix):])
-	want := []byte(token)
-	if len(got) != len(want) {
-		return false
-	}
-	return subtle.ConstantTimeCompare(got, want) == 1
 }
 
 type statusWriter struct {

@@ -4,10 +4,6 @@ FROM opencode-base
 
 USER root
 
-ENV JAVA_HOME=/opt/java/openjdk
-ENV ANDROID_HOME=/opt/android-sdk
-ENV ANDROID_NDK_HOME=/opt/android-sdk/ndk/${ANDROID_NDK_VERSION}
-
 ENV GOPATH=/home/opencode/go
 
 ENV PATH="${PATH}:/usr/local/go/bin:${GOPATH}/bin"

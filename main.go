@@ -19,7 +19,6 @@ func main() {
 	bind := envOr("RELAY_BIND", "0.0.0.0")
 	port := envOr("RELAY_PORT", "8080")
 	dataFile := envOr("RELAY_DATA_FILE", "state.json")
-	token := os.Getenv("RELAY_TOKEN")
 
 	logger := log.New(os.Stdout, "relay: ", log.LstdFlags|log.LUTC)
 
@@ -29,14 +28,9 @@ func main() {
 		logger.Fatalf("cannot start: %v", err)
 	}
 
-	if token == "" {
-		logger.Printf("warning: authentication disabled, no RELAY_TOKEN configured")
-	} else {
-		logger.Printf("authentication enabled")
-	}
 	logger.Printf("loaded %d device(s) from %s", st.DeviceCount(), dataFile)
 
-	srv := server.New(st, sts, token, logger)
+	srv := server.New(st, sts, logger)
 	httpSrv := &http.Server{
 		Addr:              net.JoinHostPort(bind, port),
 		Handler:           srv.Handler(),

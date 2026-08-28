@@ -10,7 +10,7 @@ O projeto é **independente** do repositório do Hearthlane. O Hearthlane é ape
 
 ## Estado atual
 
-Servidor mínimo **implementado** (Fase 1), também com persistência (Fase 2), autenticação Bearer (Fase 3) e testes (Fase 4). Arquivos de deploy Docker/Compose criados em `deploy/` (Fase 5). O relay é escrito em Go usando apenas a biblioteca padrão: `net/http`, `encoding/json`, `os`, `sync`, `time` e `crypto/subtle`. Pendente: deploy real no homelab e Fase 6 (integração Hearthlane).
+Servidor mínimo **implementado** (Fase 1), também com persistência (Fase 2), decisão de trust boundary: MVP sem autenticação própria (Fase 3) e testes (Fase 4). Arquivos de deploy Docker/Compose criados em `deploy/` (Fase 5). O relay é escrito em Go usando apenas a biblioteca padrão: `net/http`, `encoding/json`, `os`, `sync`, `time`. Pendente: deploy real no homelab e Fase 6 (integração Hearthlane).
 
 (NOTA: o `Dockerfile` e o `compose.yml` presentes na raiz pertencem ao ambiente de desenvolvimento do OpenCode, não ao relay. Não devem ser tratados como infraestrutura do relay nem editados como parte deste projeto. A infraestrutura de deploy do relay vive em `deploy/`.)
 
@@ -31,7 +31,7 @@ Nunca implementar, nem mesmo "por precaução":
 - Histórico, trilha, rastreamento, eventos, auditoria de coordenadas ou backups internos de posições.
 - Banco de dados (PostgreSQL, SQLite), Redis ou qualquer cache externo.
 - Sistema de usuários, contas, membros da família, grupos, roles ou ACL complexa.
-- OAuth, JWT, sessões ou qualquer mecanismo além do token por dispositivo.
+- OAuth, JWT, sessões ou qualquer mecanismo de autenticação no MVP (exceção documentada: se for necessária no futuro, usar credenciais individuais por dispositivo).
 - UI, dashboards, mapas, geofencing, notificações, analytics ou telemetria.
 - Descoberta automática de dispositivos, UPnP, abertura de portas ou exposição pública.
 - Integração específica com Tailscale, Google Maps, Google Play Services ou qualquer serviço externo.
@@ -93,7 +93,7 @@ O contrato é a fronteira com o Hearthlane. Deve permanecer estável. Não alter
 - Publicar localização não apaga nickname; alterar nickname não altera localização.
 - Remover/limpar nickname deve ser suportado pelo contrato.
 - `GET /devices` não deve incluir coordenadas se não forem necessárias; deve incluir `deviceId`, `nickname`, indicação de existência de localização e `publishedAtEpochMs` (e eventualmente `accuracy`).
-- Suporte a `Authorization: Bearer <token>` previsto no desenho; validação implementada na Fase 1 (token compartilhado via `RELAY_TOKEN`).
+- O relay não implementa autenticação própria: os endpoints respondem sem `Authorization`, e a segurança é responsabilidade da rede privada (ver README seção 13).
 
 ## Regras de compatibilidade com Hearthlane
 
@@ -105,14 +105,13 @@ O contrato é a fronteira com o Hearthlane. Deve permanecer estável. Não alter
 - Não conhecer a lógica de negócio do Hearthlane além do mínimo do contrato.
 - Alterações no contrato devem manter compatibilidade com o cliente Hearthlane ou ser documentadas como quebra acordada com o cliente.
 
-## Regras de autenticação
+## Regras de trust boundary e autenticação
 
-- Mecanismo previsto: `Authorization: Bearer <token>`.
-- Token identifica/autentica o dispositivo.
-- Tokens **nunca** devem aparecer em logs.
-- Respostas de erro **nunca** devem devolver o token.
-- O relay deve validar o token antes de aceitar/retornar dados.
-- Implementado com um token único compartilhado (`RELAY_TOKEN`); sem a variável a autenticação fica desabilitada com aviso no log de inicialização. Token por dispositivo permanece evolução futura, se houver necessidade real.
+- O MVP **não implementa autenticação própria**. O relay aceita requisições sem `Authorization` e ignora qualquer cabeçalho de autenticação enviado.
+- O serviço deve operar somente em rede privada confiável (LAN doméstica e/ou Tailscale). **Nunca** expor o relay diretamente à Internet.
+- O Nginx Proxy Manager pode servir como reverse proxy da rede privada, mas não adiciona autenticação nem torna o serviço público.
+- Mesmo sem validação, tokens e o cabeçalho `Authorization` jamais devem ser registrados em logs nem devolvidos em respostas.
+- Evolução futura documentada (não implementar agora): credenciais individuais por dispositivo (`device A → credential A`), nunca um token único compartilhado.
 - Não criar sistema de contas, OAuth ou JWT.
 
 ## Regras de logs

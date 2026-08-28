@@ -20,33 +20,31 @@ import (
 	"hearthlane-relay/internal/store"
 )
 
-const testToken = "test-token"
-
 type env struct {
 	ts   *httptest.Server
 	path string
 	logs *bytes.Buffer
 }
 
-func newTestServer(t *testing.T, token string) *env {
+func newTestServer(t *testing.T) *env {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
-	return newTestServerAt(t, token, path, state.New())
+	return newTestServerAt(t, path, state.New())
 }
 
-func newTestServerAt(t *testing.T, token, path string, st *state.State) *env {
+func newTestServerAt(t *testing.T, path string, st *state.State) *env {
 	t.Helper()
 	sts := store.New(path)
 	logs := &bytes.Buffer{}
 	logger := log.New(logs, "relay: ", 0)
-	srv := server.New(st, sts, token, logger)
+	srv := server.New(st, sts, logger)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	return &env{ts: ts, path: path, logs: logs}
 }
 
-func doRequest(t *testing.T, e *env, method, url, token string, body any) (*http.Response, []byte) {
+func doRequest(t *testing.T, e *env, method, url string, body any) (*http.Response, []byte) {
 	t.Helper()
 	var rd io.Reader
 	if body != nil {
@@ -60,9 +58,6 @@ func doRequest(t *testing.T, e *env, method, url, token string, body any) (*http
 	if err != nil {
 		t.Fatal(err)
 	}
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -75,9 +70,9 @@ func doRequest(t *testing.T, e *env, method, url, token string, body any) (*http
 	return resp, data
 }
 
-func mustDo(t *testing.T, e *env, method, url, token string, body any) (*http.Response, []byte) {
+func mustDo(t *testing.T, e *env, method, url string, body any) (*http.Response, []byte) {
 	t.Helper()
-	resp, data := doRequest(t, e, method, url, token, body)
+	resp, data := doRequest(t, e, method, url, body)
 	if data != nil && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
 		t.Fatalf("%s %s: unexpected status %d: %s", method, url, resp.StatusCode, data)
 	}
@@ -93,7 +88,7 @@ func nicknameURL(e *env, deviceID string) string {
 }
 
 func TestPublishLocationAndGet(t *testing.T) {
-	e := newTestServer(t, testToken)
+	e := newTestServer(t)
 	body := map[string]any{
 		"latitude":          -23.55,
 		"longitude":         -46.63,
@@ -101,9 +96,9 @@ func TestPublishLocationAndGet(t *testing.T) {
 		"provider":          "network",
 		"recordedAtEpochMs": 1234567890000,
 	}
-	mustDo(t, e, "PUT", locationURL(e, "hearthlane-ab12cd34"), testToken, body)
+	mustDo(t, e, "PUT", locationURL(e, "hearthlane-ab12cd34"), body)
 
-	resp, data := mustDo(t, e, "GET", locationURL(e, "hearthlane-ab12cd34"), testToken, nil)
+	resp, data := mustDo(t, e, "GET", locationURL(e, "hearthlane-ab12cd34"), nil)
 	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "application/json") {
 		t.Fatalf("unexpected content type %q", ct)
 	}
@@ -137,12 +132,12 @@ func TestPublishLocationAndGet(t *testing.T) {
 }
 
 func TestPublishReplacesPrevious(t *testing.T) {
-	e := newTestServer(t, testToken)
-	mustDo(t, e, "PUT", locationURL(e, "d1"), testToken, map[string]any{"latitude": 1, "longitude": 2})
-	_, d1 := mustDo(t, e, "GET", locationURL(e, "d1"), testToken, nil)
+	e := newTestServer(t)
+	mustDo(t, e, "PUT", locationURL(e, "d1"), map[string]any{"latitude": 1, "longitude": 2})
+	_, d1 := mustDo(t, e, "GET", locationURL(e, "d1"), nil)
 	time.Sleep(5 * time.Millisecond)
-	mustDo(t, e, "PUT", locationURL(e, "d1"), testToken, map[string]any{"latitude": 3, "longitude": 4})
-	_, d2 := mustDo(t, e, "GET", locationURL(e, "d1"), testToken, nil)
+	mustDo(t, e, "PUT", locationURL(e, "d1"), map[string]any{"latitude": 3, "longitude": 4})
+	_, d2 := mustDo(t, e, "GET", locationURL(e, "d1"), nil)
 
 	var loc1, loc2 struct {
 		Latitude           float64 `json:"latitude"`
@@ -164,11 +159,11 @@ func TestPublishReplacesPrevious(t *testing.T) {
 }
 
 func TestPublishedAtEpochMsIgnoredFromClient(t *testing.T) {
-	e := newTestServer(t, testToken)
-	mustDo(t, e, "PUT", locationURL(e, "d1"), testToken, map[string]any{
+	e := newTestServer(t)
+	mustDo(t, e, "PUT", locationURL(e, "d1"), map[string]any{
 		"latitude": 1, "longitude": 2, "publishedAtEpochMs": 42, "unexpectedField": "ignored",
 	})
-	_, data := mustDo(t, e, "GET", locationURL(e, "d1"), testToken, nil)
+	_, data := mustDo(t, e, "GET", locationURL(e, "d1"), nil)
 	var loc struct {
 		PublishedAtEpochMs int64 `json:"publishedAtEpochMs"`
 	}
@@ -181,29 +176,29 @@ func TestPublishedAtEpochMsIgnoredFromClient(t *testing.T) {
 }
 
 func TestGetLocationNotFound(t *testing.T) {
-	e := newTestServer(t, testToken)
-	resp, data := doRequest(t, e, "GET", locationURL(e, "unknown"), testToken, nil)
+	e := newTestServer(t)
+	resp, data := doRequest(t, e, "GET", locationURL(e, "unknown"), nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d: %s", resp.StatusCode, data)
 	}
 }
 
 func TestGetLocation404ForDeviceWithoutLocation(t *testing.T) {
-	e := newTestServer(t, testToken)
-	mustDo(t, e, "PUT", nicknameURL(e, "d1"), testToken, map[string]any{"nickname": "x"})
-	resp, _ := doRequest(t, e, "GET", locationURL(e, "d1"), testToken, nil)
+	e := newTestServer(t)
+	mustDo(t, e, "PUT", nicknameURL(e, "d1"), map[string]any{"nickname": "x"})
+	resp, _ := doRequest(t, e, "GET", locationURL(e, "d1"), nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 for device without location, got %d", resp.StatusCode)
 	}
 }
 
 func TestListDevices(t *testing.T) {
-	e := newTestServer(t, testToken)
-	mustDo(t, e, "PUT", locationURL(e, "d2"), testToken, map[string]any{"latitude": 2, "longitude": 3, "accuracy": 5})
-	mustDo(t, e, "PUT", nicknameURL(e, "d1"), testToken, map[string]any{"nickname": "Meu celular"})
-	mustDo(t, e, "PUT", locationURL(e, "d1"), testToken, map[string]any{"latitude": 1, "longitude": 2})
+	e := newTestServer(t)
+	mustDo(t, e, "PUT", locationURL(e, "d2"), map[string]any{"latitude": 2, "longitude": 3, "accuracy": 5})
+	mustDo(t, e, "PUT", nicknameURL(e, "d1"), map[string]any{"nickname": "Meu celular"})
+	mustDo(t, e, "PUT", locationURL(e, "d1"), map[string]any{"latitude": 1, "longitude": 2})
 
-	resp, data := doRequest(t, e, "GET", e.ts.URL+"/devices", testToken, nil)
+	resp, data := doRequest(t, e, "GET", e.ts.URL+"/devices", nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
@@ -240,8 +235,8 @@ func TestListDevices(t *testing.T) {
 }
 
 func TestListDevicesEmpty(t *testing.T) {
-	e := newTestServer(t, testToken)
-	_, data := mustDo(t, e, "GET", e.ts.URL+"/devices", testToken, nil)
+	e := newTestServer(t)
+	_, data := mustDo(t, e, "GET", e.ts.URL+"/devices", nil)
 	var out struct {
 		Devices []any `json:"devices"`
 	}
@@ -254,53 +249,53 @@ func TestListDevicesEmpty(t *testing.T) {
 }
 
 func TestNicknameSetChangeAndClear(t *testing.T) {
-	e := newTestServer(t, testToken)
-	mustDo(t, e, "PUT", nicknameURL(e, "d1"), testToken, map[string]any{"nickname": "Meu celular"})
+	e := newTestServer(t)
+	mustDo(t, e, "PUT", nicknameURL(e, "d1"), map[string]any{"nickname": "Meu celular"})
 
-	_, data := mustDo(t, e, "GET", e.ts.URL+"/devices", testToken, nil)
+	_, data := mustDo(t, e, "GET", e.ts.URL+"/devices", nil)
 	if !strings.Contains(string(data), "Meu celular") {
 		t.Fatalf("nickname not listed: %s", data)
 	}
 
-	mustDo(t, e, "PUT", nicknameURL(e, "d1"), testToken, map[string]any{"nickname": "Celular da mae"})
-	_, data = mustDo(t, e, "GET", e.ts.URL+"/devices", testToken, nil)
+	mustDo(t, e, "PUT", nicknameURL(e, "d1"), map[string]any{"nickname": "Celular da mae"})
+	_, data = mustDo(t, e, "GET", e.ts.URL+"/devices", nil)
 	if !strings.Contains(string(data), "Celular da mae") || strings.Contains(string(data), "Meu celular") {
 		t.Fatalf("nickname change failed: %s", data)
 	}
 
-	mustDo(t, e, "PUT", nicknameURL(e, "d1"), testToken, map[string]any{"nickname": ""})
-	_, data = mustDo(t, e, "GET", e.ts.URL+"/devices", testToken, nil)
+	mustDo(t, e, "PUT", nicknameURL(e, "d1"), map[string]any{"nickname": ""})
+	_, data = mustDo(t, e, "GET", e.ts.URL+"/devices", nil)
 	if strings.Contains(string(data), "Celular da mae") {
 		t.Fatalf("nickname not cleared: %s", data)
 	}
 }
 
 func TestClearNicknameWithLocationKeepsDevice(t *testing.T) {
-	e := newTestServer(t, testToken)
-	mustDo(t, e, "PUT", locationURL(e, "d1"), testToken, map[string]any{"latitude": 1, "longitude": 2})
-	mustDo(t, e, "PUT", nicknameURL(e, "d1"), testToken, map[string]any{"nickname": "x"})
-	mustDo(t, e, "PUT", nicknameURL(e, "d1"), testToken, map[string]any{"nickname": ""})
-	_, data := mustDo(t, e, "GET", e.ts.URL+"/devices", testToken, nil)
+	e := newTestServer(t)
+	mustDo(t, e, "PUT", locationURL(e, "d1"), map[string]any{"latitude": 1, "longitude": 2})
+	mustDo(t, e, "PUT", nicknameURL(e, "d1"), map[string]any{"nickname": "x"})
+	mustDo(t, e, "PUT", nicknameURL(e, "d1"), map[string]any{"nickname": ""})
+	_, data := mustDo(t, e, "GET", e.ts.URL+"/devices", nil)
 	if !strings.Contains(string(data), `"deviceId":"d1"`) {
 		t.Fatalf("device with location must remain after clearing nickname: %s", data)
 	}
 }
 
 func TestPublishDoesNotClearNickname(t *testing.T) {
-	e := newTestServer(t, testToken)
-	mustDo(t, e, "PUT", nicknameURL(e, "d1"), testToken, map[string]any{"nickname": "Meu celular"})
-	mustDo(t, e, "PUT", locationURL(e, "d1"), testToken, map[string]any{"latitude": 1, "longitude": 2})
-	_, data := mustDo(t, e, "GET", e.ts.URL+"/devices", testToken, nil)
+	e := newTestServer(t)
+	mustDo(t, e, "PUT", nicknameURL(e, "d1"), map[string]any{"nickname": "Meu celular"})
+	mustDo(t, e, "PUT", locationURL(e, "d1"), map[string]any{"latitude": 1, "longitude": 2})
+	_, data := mustDo(t, e, "GET", e.ts.URL+"/devices", nil)
 	if !strings.Contains(string(data), "Meu celular") {
 		t.Fatalf("nickname lost after publish: %s", data)
 	}
 }
 
 func TestNicknameDoesNotAffectLocation(t *testing.T) {
-	e := newTestServer(t, testToken)
-	mustDo(t, e, "PUT", locationURL(e, "d1"), testToken, map[string]any{"latitude": 1, "longitude": 2})
-	mustDo(t, e, "PUT", nicknameURL(e, "d1"), testToken, map[string]any{"nickname": "novo"})
-	_, data := mustDo(t, e, "GET", locationURL(e, "d1"), testToken, nil)
+	e := newTestServer(t)
+	mustDo(t, e, "PUT", locationURL(e, "d1"), map[string]any{"latitude": 1, "longitude": 2})
+	mustDo(t, e, "PUT", nicknameURL(e, "d1"), map[string]any{"nickname": "novo"})
+	_, data := mustDo(t, e, "GET", locationURL(e, "d1"), nil)
 	var loc struct {
 		Latitude  float64 `json:"latitude"`
 		Longitude float64 `json:"longitude"`
@@ -313,66 +308,72 @@ func TestNicknameDoesNotAffectLocation(t *testing.T) {
 	}
 }
 
-func TestAuthRequired(t *testing.T) {
-	e := newTestServer(t, testToken)
+func TestEndpointsWorkWithoutAuthorization(t *testing.T) {
+	e := newTestServer(t)
 
-	for _, tc := range []struct {
-		name   string
-		method string
-		url    string
-		body   any
-	}{
-		{"no header get", "GET", e.ts.URL + "/devices", nil},
-		{"no header put", "PUT", locationURL(e, "d1"), map[string]any{"latitude": 1, "longitude": 2}},
+	resp, _ := doRequest(t, e, "GET", e.ts.URL+"/devices", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /devices without Authorization: expected 200, got %d", resp.StatusCode)
+	}
+
+	resp, _ = doRequest(t, e, "PUT", locationURL(e, "d1"), map[string]any{"latitude": 1, "longitude": 2})
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("PUT /devices/{id}/location without Authorization: expected 204, got %d", resp.StatusCode)
+	}
+
+	resp, _ = doRequest(t, e, "GET", locationURL(e, "d1"), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /devices/{id}/location without Authorization: expected 200, got %d", resp.StatusCode)
+	}
+
+	resp, _ = doRequest(t, e, "PUT", nicknameURL(e, "d1"), map[string]any{"nickname": "sem auth"})
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("PUT /devices/{id}/nickname without Authorization: expected 204, got %d", resp.StatusCode)
+	}
+}
+
+func TestAuthorizationHeaderIgnored(t *testing.T) {
+	e := newTestServer(t)
+	for _, scheme := range []string{
+		"Bearer whatever",
+		"Basic dG9rZW4=",
+		"Token some-token",
+		"",
 	} {
-		resp, data := doRequest(t, e, tc.method, tc.url, "", tc.body)
-		if resp.StatusCode != http.StatusUnauthorized {
-			t.Fatalf("%s: expected 401, got %d", tc.name, resp.StatusCode)
-		}
-		if strings.Contains(string(data), testToken) {
-			t.Fatalf("%s: token leaked in error body: %s", tc.name, data)
-		}
-	}
-
-	req, _ := http.NewRequest("GET", e.ts.URL+"/devices", nil)
-	req.Header.Set("Authorization", "Bearer wrong-token")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("wrong token: expected 401, got %d", resp.StatusCode)
-	}
-
-	for _, scheme := range []string{"Basic dG9rZW4=", "Token test-token", "Bearer " + testToken + " extra", "test-token"} {
 		req, _ := http.NewRequest("GET", e.ts.URL+"/devices", nil)
-		req.Header.Set("Authorization", scheme)
+		if scheme != "" {
+			req.Header.Set("Authorization", scheme)
+		}
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}
 		resp.Body.Close()
-		if resp.StatusCode != http.StatusUnauthorized {
-			t.Fatalf("authorization %q: expected 401, got %d", scheme, resp.StatusCode)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("Authorization %q: expected 200, got %d", scheme, resp.StatusCode)
 		}
 	}
 }
 
-func TestAuthDisabledWithoutToken(t *testing.T) {
-	e := newTestServer(t, "")
-	resp, _ := doRequest(t, e, "GET", e.ts.URL+"/devices", "", nil)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200 with auth disabled, got %d", resp.StatusCode)
-	}
-	resp, _ = doRequest(t, e, "PUT", locationURL(e, "d1"), "", map[string]any{"latitude": 1, "longitude": 2})
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("expected 204 with auth disabled, got %d", resp.StatusCode)
+func TestNoV1Prefix(t *testing.T) {
+	e := newTestServer(t)
+	for _, tc := range []struct {
+		method string
+		url    string
+	}{
+		{"GET", e.ts.URL + "/v1/devices"},
+		{"GET", e.ts.URL + "/v1/devices/d1/location"},
+		{"PUT", e.ts.URL + "/v1/devices/d1/location"},
+	} {
+		resp, _ := doRequest(t, e, tc.method, tc.url, map[string]any{"latitude": 1, "longitude": 2})
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("%s %s: expected 404 (no /v1 prefix), got %d", tc.method, tc.url, resp.StatusCode)
+		}
 	}
 }
 
 func TestMethodNotAllowed(t *testing.T) {
-	e := newTestServer(t, testToken)
+	e := newTestServer(t)
 	for _, tc := range []struct {
 		method string
 		url    string
@@ -382,7 +383,7 @@ func TestMethodNotAllowed(t *testing.T) {
 		{"GET", nicknameURL(e, "d1"), nil},
 		{"DELETE", locationURL(e, "d1"), nil},
 	} {
-		resp, _ := doRequest(t, e, tc.method, tc.url, testToken, tc.body)
+		resp, _ := doRequest(t, e, tc.method, tc.url, tc.body)
 		if resp.StatusCode != http.StatusMethodNotAllowed {
 			t.Fatalf("%s %s: expected 405, got %d", tc.method, tc.url, resp.StatusCode)
 		}
@@ -390,15 +391,15 @@ func TestMethodNotAllowed(t *testing.T) {
 }
 
 func TestUnknownPathNotFound(t *testing.T) {
-	e := newTestServer(t, testToken)
-	resp, _ := doRequest(t, e, "GET", e.ts.URL+"/unknown", testToken, nil)
+	e := newTestServer(t)
+	resp, _ := doRequest(t, e, "GET", e.ts.URL+"/unknown", nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", resp.StatusCode)
 	}
 }
 
 func TestInvalidDeviceID(t *testing.T) {
-	e := newTestServer(t, testToken)
+	e := newTestServer(t)
 	long := strings.Repeat("a", 129)
 	for _, tc := range []struct {
 		name string
@@ -408,7 +409,7 @@ func TestInvalidDeviceID(t *testing.T) {
 		{"too long", e.ts.URL + "/devices/" + long + "/location"},
 		{"slash nickname", e.ts.URL + "/devices/a%2Fb/nickname"},
 	} {
-		resp, data := doRequest(t, e, "PUT", tc.url, testToken, map[string]any{"latitude": 1, "longitude": 2})
+		resp, data := doRequest(t, e, "PUT", tc.url, map[string]any{"latitude": 1, "longitude": 2})
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Fatalf("%s: expected 400, got %d: %s", tc.name, resp.StatusCode, data)
 		}
@@ -416,10 +417,9 @@ func TestInvalidDeviceID(t *testing.T) {
 }
 
 func TestInvalidPayloads(t *testing.T) {
-	e := newTestServer(t, testToken)
+	e := newTestServer(t)
 	raw := func(body string) *http.Response {
 		req, _ := http.NewRequest("PUT", locationURL(e, "d1"), strings.NewReader(body))
-		req.Header.Set("Authorization", "Bearer "+testToken)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
@@ -449,7 +449,7 @@ func TestInvalidPayloads(t *testing.T) {
 }
 
 func TestInvalidNicknameBodies(t *testing.T) {
-	e := newTestServer(t, testToken)
+	e := newTestServer(t)
 	for _, tc := range []struct {
 		body string
 	}{
@@ -459,7 +459,6 @@ func TestInvalidNicknameBodies(t *testing.T) {
 		{``},
 	} {
 		req, _ := http.NewRequest("PUT", nicknameURL(e, "d1"), strings.NewReader(tc.body))
-		req.Header.Set("Authorization", "Bearer "+testToken)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
@@ -472,8 +471,8 @@ func TestInvalidNicknameBodies(t *testing.T) {
 }
 
 func TestPersistenceAfterPublish(t *testing.T) {
-	e := newTestServer(t, testToken)
-	mustDo(t, e, "PUT", locationURL(e, "d1"), testToken, map[string]any{"latitude": 1, "longitude": 2, "accuracy": 9})
+	e := newTestServer(t)
+	mustDo(t, e, "PUT", locationURL(e, "d1"), map[string]any{"latitude": 1, "longitude": 2, "accuracy": 9})
 	data, err := os.ReadFile(e.path)
 	if err != nil {
 		t.Fatal(err)
@@ -500,9 +499,9 @@ func TestPersistenceAfterPublish(t *testing.T) {
 }
 
 func TestRestoreAfterRestart(t *testing.T) {
-	e := newTestServer(t, testToken)
-	mustDo(t, e, "PUT", locationURL(e, "d1"), testToken, map[string]any{"latitude": -23.55, "longitude": -46.63})
-	mustDo(t, e, "PUT", nicknameURL(e, "d2"), testToken, map[string]any{"nickname": "Tablet"})
+	e := newTestServer(t)
+	mustDo(t, e, "PUT", locationURL(e, "d1"), map[string]any{"latitude": -23.55, "longitude": -46.63})
+	mustDo(t, e, "PUT", nicknameURL(e, "d2"), map[string]any{"nickname": "Tablet"})
 
 	sts := store.New(e.path)
 	st, err := sts.Load()
@@ -512,8 +511,8 @@ func TestRestoreAfterRestart(t *testing.T) {
 	if st.DeviceCount() != 2 {
 		t.Fatalf("expected 2 devices after restart, got %d", st.DeviceCount())
 	}
-	restarted := newTestServerAt(t, testToken, e.path, st)
-	_, data := mustDo(t, restarted, "GET", locationURL(restarted, "d1"), testToken, nil)
+	restarted := newTestServerAt(t, e.path, st)
+	_, data := mustDo(t, restarted, "GET", locationURL(restarted, "d1"), nil)
 	var loc struct {
 		Latitude  float64 `json:"latitude"`
 		Longitude float64 `json:"longitude"`
@@ -524,19 +523,19 @@ func TestRestoreAfterRestart(t *testing.T) {
 	if loc.Latitude != -23.55 || loc.Longitude != -46.63 {
 		t.Fatalf("location not restored after restart: %+v", loc)
 	}
-	_, data = mustDo(t, restarted, "GET", restarted.ts.URL+"/devices", testToken, nil)
+	_, data = mustDo(t, restarted, "GET", restarted.ts.URL+"/devices", nil)
 	if !strings.Contains(string(data), "Tablet") {
 		t.Fatalf("nickname not restored after restart: %s", data)
 	}
 }
 
 func TestCorruptFileStillServedFromMemory(t *testing.T) {
-	e := newTestServer(t, testToken)
-	mustDo(t, e, "PUT", locationURL(e, "d1"), testToken, map[string]any{"latitude": 1, "longitude": 2})
+	e := newTestServer(t)
+	mustDo(t, e, "PUT", locationURL(e, "d1"), map[string]any{"latitude": 1, "longitude": 2})
 	if err := os.WriteFile(e.path, []byte("corrupted-on-disk"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, data := mustDo(t, e, "GET", locationURL(e, "d1"), testToken, nil)
+	_, data := mustDo(t, e, "GET", locationURL(e, "d1"), nil)
 	var loc struct {
 		Latitude  float64 `json:"latitude"`
 		Longitude float64 `json:"longitude"`
@@ -547,7 +546,7 @@ func TestCorruptFileStillServedFromMemory(t *testing.T) {
 	if loc.Latitude != 1 || loc.Longitude != 2 {
 		t.Fatalf("GET must be served from memory, got %+v", loc)
 	}
-	mustDo(t, e, "PUT", locationURL(e, "d1"), testToken, map[string]any{"latitude": 3, "longitude": 4})
+	mustDo(t, e, "PUT", locationURL(e, "d1"), map[string]any{"latitude": 3, "longitude": 4})
 	raw, err := os.ReadFile(e.path)
 	if err != nil {
 		t.Fatal(err)
@@ -558,10 +557,10 @@ func TestCorruptFileStillServedFromMemory(t *testing.T) {
 }
 
 func TestStateFileOnlyCurrentLocation(t *testing.T) {
-	e := newTestServer(t, testToken)
-	mustDo(t, e, "PUT", locationURL(e, "d1"), testToken, map[string]any{"latitude": 1, "longitude": 2})
-	mustDo(t, e, "PUT", locationURL(e, "d1"), testToken, map[string]any{"latitude": 3, "longitude": 4})
-	mustDo(t, e, "PUT", nicknameURL(e, "d1"), testToken, map[string]any{"nickname": "x"})
+	e := newTestServer(t)
+	mustDo(t, e, "PUT", locationURL(e, "d1"), map[string]any{"latitude": 1, "longitude": 2})
+	mustDo(t, e, "PUT", locationURL(e, "d1"), map[string]any{"latitude": 3, "longitude": 4})
+	mustDo(t, e, "PUT", nicknameURL(e, "d1"), map[string]any{"nickname": "x"})
 	raw, err := os.ReadFile(e.path)
 	if err != nil {
 		t.Fatal(err)
@@ -572,7 +571,7 @@ func TestStateFileOnlyCurrentLocation(t *testing.T) {
 }
 
 func TestConcurrentGetAndPut(t *testing.T) {
-	e := newTestServer(t, testToken)
+	e := newTestServer(t)
 	const devices = 10
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {
@@ -582,7 +581,6 @@ func TestConcurrentGetAndPut(t *testing.T) {
 			for j := 0; j < 10; j++ {
 				id := fmt.Sprintf("dev-%d", (i+j)%devices)
 				req, _ := http.NewRequest("PUT", locationURL(e, id), jsonBody(t, map[string]any{"latitude": j, "longitude": j}))
-				req.Header.Set("Authorization", "Bearer "+testToken)
 				resp, err := http.DefaultClient.Do(req)
 				if err != nil {
 					t.Error(err)
@@ -599,7 +597,6 @@ func TestConcurrentGetAndPut(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < 20; j++ {
 				req, _ := http.NewRequest("GET", locationURL(e, fmt.Sprintf("dev-%d", j%devices)), nil)
-				req.Header.Set("Authorization", "Bearer "+testToken)
 				resp, err := http.DefaultClient.Do(req)
 				if err != nil {
 					t.Error(err)
@@ -640,17 +637,16 @@ func jsonBody(t *testing.T, v any) io.Reader {
 }
 
 func TestNoSensitiveDataInLogs(t *testing.T) {
-	const token = "super-secret-token-123"
 	const lat = "-12.345678"
 	const lon = "-45.678901"
-	e := newTestServer(t, token)
+	e := newTestServer(t)
 
 	body := map[string]any{"latitude": -12.345678, "longitude": -45.678901, "accuracy": 12}
-	mustDo(t, e, "PUT", locationURL(e, "d1"), token, body)
-	mustDo(t, e, "PUT", locationURL(e, "d2"), token, map[string]any{"latitude": 0, "longitude": 0})
+	mustDo(t, e, "PUT", locationURL(e, "d1"), body)
+	mustDo(t, e, "PUT", locationURL(e, "d2"), map[string]any{"latitude": 0, "longitude": 0})
 
 	req, _ := http.NewRequest("PUT", locationURL(e, "d3"), strings.NewReader(`{"latitude":91,"longitude":0}`))
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", "Bearer super-secret-token-123")
 	if resp, err := http.DefaultClient.Do(req); err != nil {
 		t.Fatal(err)
 	} else {
@@ -666,9 +662,14 @@ func TestNoSensitiveDataInLogs(t *testing.T) {
 	}
 
 	logs := e.logs.String()
-	for _, secret := range []string{token, lat, lon, "Bearer", "-12.345678,-45.678901"} {
+	for _, secret := range []string{lat, lon, "-12.345678,-45.678901"} {
 		if strings.Contains(logs, secret) {
 			t.Fatalf("log leak of %q:\n%s", secret, logs)
+		}
+	}
+	for _, auth := range []string{"Bearer", "super-secret-token-123", "wrong"} {
+		if strings.Contains(logs, auth) {
+			t.Fatalf("Authorization material leaked in logs: %q:\n%s", auth, logs)
 		}
 	}
 	if !strings.Contains(logs, "method=PUT") || !strings.Contains(logs, "status=204") {
@@ -676,24 +677,11 @@ func TestNoSensitiveDataInLogs(t *testing.T) {
 	}
 }
 
-func TestAuthFailureNoTokenInResponse(t *testing.T) {
-	e := newTestServer(t, testToken)
-	resp, data := doRequest(t, e, "GET", e.ts.URL+"/devices", "definitely-not-the-token", nil)
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d", resp.StatusCode)
-	}
-	for _, secret := range []string{testToken, "definitely-not-the-token"} {
-		if strings.Contains(string(data), secret) {
-			t.Fatalf("token leaked in response: %s", data)
-		}
-	}
-}
-
 func TestPublishedAtGeneratedByRelay(t *testing.T) {
-	e := newTestServer(t, testToken)
+	e := newTestServer(t)
 	before := time.Now().UnixMilli()
-	mustDo(t, e, "PUT", locationURL(e, "d1"), testToken, map[string]any{"latitude": 1, "longitude": 2})
-	_, data := mustDo(t, e, "GET", locationURL(e, "d1"), testToken, nil)
+	mustDo(t, e, "PUT", locationURL(e, "d1"), map[string]any{"latitude": 1, "longitude": 2})
+	_, data := mustDo(t, e, "GET", locationURL(e, "d1"), nil)
 	var loc struct {
 		PublishedAtEpochMs int64 `json:"publishedAtEpochMs"`
 	}

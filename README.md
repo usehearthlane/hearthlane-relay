@@ -178,7 +178,7 @@ Regras:
 - O relay rejeita/ignora `publishedAtEpochMs` enviado pelo cliente.
 - `GET /devices` retorna informações mínimas de apresentação: `deviceId`, `nickname`, existência de localização, `publishedAtEpochMs` e eventualmente `accuracy`. **Não** expõe coordenadas na listagem.
 - `GET /devices/{deviceId}/location` retorna a localização quando existir; `404` quando não houver.
-- Autenticação prevista (ver seção 13), com desenho do contrato já preparado para `Authorization: Bearer <token>`.
+- O relay não implementa autenticação própria: os endpoints respondem sem `Authorization`, e a segurança é garantida pela rede privada (ver seção 13).
 
 ## 11. Política de armazenamento — "last known only"
 
@@ -207,18 +207,16 @@ Localização é dado sensível. O projeto adota minimização desde o início:
 
 O relay foi projetado para operar **dentro da infraestrutura privada do usuário**.
 
-## 13. Autenticação prevista
+## 13. Segurança e trust boundary
 
-Mecanismo previsto no contrato: `Authorization: Bearer <token>`, com um token por dispositivo.
+O Hearthlane Relay MVP **não implementa autenticação própria**. O serviço deve permanecer acessível somente em uma rede privada confiável, como a LAN doméstica e/ou Tailscale. O relay **não deve ser exposto diretamente à Internet**.
 
-- O token identifica/autentica o dispositivo.
-- Tokens nunca aparecem em logs.
-- Respostas de erro nunca devolvem o token.
-- O relay valida o token antes de aceitar/retornar dados.
+- O relay aceita requisições sem `Authorization`; qualquer cabeçalho de autenticação enviado é ignorado (não é validado nem rejeitado).
+- A segurança é responsabilidade da infraestrutura: LAN/Tailscale, firewall, VPN. O relay não decide nem controla a exposição da rede.
+- O Nginx Proxy Manager pode ser utilizado como reverse proxy na rede privada, mas isso **não** transforma o relay em serviço público — o relay não executa regras de autenticação e não deve ser publicado para a Internet.
+- Mesmo sem validação, tokens e o cabeçalho `Authorization` jamais devem aparecer em logs nem ser devolvidos em respostas.
 
-**Implementado na Fase 1** com um token único compartilhado para todo o relay, configurado em `RELAY_TOKEN` — simples e adequado ao ambiente privado. Se `RELAY_TOKEN` não estiver definido, a autenticação fica desabilitada e um aviso é registrado no log de inicialização (o controle de exposição da rede continua sendo responsabilidade da operação). Tokens por dispositivo permanecem uma evolução futura, se houver necessidade real.
-
-Não fazem parte do desenho: contas, OAuth, JWT ou sessões.
+**Evolução futura (não implementada no MVP):** se autenticação for necessária, preferir credenciais individuais por dispositivo (`device A → credential A`, `device B → credential B`) a um token único compartilhado para todo o relay. Não fazem parte do desenho: contas, OAuth, JWT ou sessões.
 
 ## 14. Relação com o Hearthlane
 
@@ -271,7 +269,8 @@ Configuração mínima por environment variables, suficiente para Docker:
 | `RELAY_BIND` | `0.0.0.0` | Endereço de bind (a exposição da rede é responsabilidade da operação) |
 | `RELAY_PORT` | `8080` | Porta HTTP |
 | `RELAY_DATA_FILE` | `state.json` | Caminho do arquivo JSON de persistência |
-| `RELAY_TOKEN` | vazio | Token compartilhado para `Authorization: Bearer`; vazio desabilita autenticação (com aviso no log) |
+
+O relay **não** possui variável de autenticação: não há token, chave ou segredo. A segurança é a rede privada (ver seção 13).
 
 ### Deploy no homelab (Docker / Fase 5)
 
@@ -279,22 +278,19 @@ Arquivos de deploy em `deploy/` (a raiz do repositório não contém infraestrut
 
 ```bash
 cd deploy
-# definir o token (nunca commitar secrets)
-echo 'RELAY_TOKEN=altere-me' > .env
 docker compose up -d --build
 ```
 
 - Imagem multi-stage (build Go → runtime Alpine), roda como usuário **não-root** (UID 10001).
 - O estado persiste no volume nomeado `relay-data`, montado em `/data/state.json` (sobrevive a restart/recreate; a última localização volta após reinício).
-- `restart: unless-stopped`; porta publicada `8080:8080` — o controle de exposição da rede continua sendo responsabilidade da operação (LAN/Tailscale, firewall).
-- O compose falha ao subir se `RELAY_TOKEN` não estiver definido (`${RELAY_TOKEN:?}`).
+- `restart: unless-stopped`; porta publicada `8080:8080`. Sem autenticação própria, publique apenas em rede privada (LAN/Tailscale, firewall) — **nunca** exponha o contêiner diretamente à Internet (ver seção 13).
 
 ## 19. Decisões arquiteturais
 
 Decisões registradas (não reverter sem justificativa e registro):
 
 1. Relay é um projeto separado do Hearthlane.
-2. Fase 0 entregou apenas documentação; o relay foi implementado na Fase 1 (servidor mínimo, persistência atômica, autenticação Bearer e testes).
+2. Fase 0 entregou apenas documentação; o relay foi implementado na Fase 1 (servidor mínimo, persistência atômica e testes).
 3. Relay mantém somente a última localização conhecida.
 4. Não existe histórico.
 5. Não existe trilha.
@@ -320,9 +316,9 @@ Decisões registradas (não reverter sem justificativa e registro):
 25. Não existe cloud.
 26. Não existe endpoint público.
 27. Não existe sistema de usuários no MVP.
-28. Autenticação Bearer implementada na Fase 1 com token único compartilhado (`RELAY_TOKEN`); token por dispositivo permanece evolução futura.
+28. MVP sem autenticação própria: o relay confia na rede privada (LAN/Tailscale) como fronteira de confiança e não valida `Authorization`. Se autenticação for necessária no futuro, usar credenciais individuais por dispositivo — nunca um token único compartilhado.
 29. Arquivo de estado corrompido/inválido na inicialização faz o relay falhar ao iniciar — nunca apaga os dados silenciosamente.
-30. Configuração mínima por environment variables (`RELAY_BIND`, `RELAY_PORT`, `RELAY_DATA_FILE`, `RELAY_TOKEN`).
+30. Configuração mínima por environment variables (`RELAY_BIND`, `RELAY_PORT`, `RELAY_DATA_FILE`).
 31. Endpoint de health não foi adicionado: o contrato documentado define exatamente 4 endpoints.
 32. Arquivos de deploy (Fase 5) ficam em `deploy/` para não conflitar com o `Dockerfile`/`compose.yml` do ambiente de desenvolvimento na raiz; o relay opera como binário ou contêiner não-root, com volume persistente.
 
@@ -350,10 +346,9 @@ Fases 0 (documentação), 1 (servidor mínimo), 2 (persistência), 3 (segurança
 - Recuperação após restart
 
 ### Fase 3 — Segurança (concluída)
-- `Authorization: Bearer`
-- Token compartilhado via `RELAY_TOKEN`
-- Validação
-- Sanitização de erros
+- Decisão de trust boundary: MVP **sem autenticação própria**, confiando na rede privada (LAN/Tailscale) como única fronteira
+- Remoção do `Authorization: Bearer` e da variável `RELAY_TOKEN`
+- Manutenção das regras de privacidade (sem coordenadas, tokens ou cabeçalho `Authorization` em logs)
 
 ### Fase 4 — Testes (concluída)
 - Testes unitários
@@ -379,11 +374,11 @@ Fases 0 (documentação), 1 (servidor mínimo), 2 (persistência), 3 (segurança
 
 ## 21. Estado atual do projeto
 
-**Este projeto está na Fase 1 concluída**, com persistência (Fase 2), autenticação Bearer (Fase 3), testes (Fase 4) e os arquivos de deploy (Fase 5) também entregues.
+**Este projeto está na Fase 1 concluída**, com persistência (Fase 2), decisão de trust boundary sem autenticação própria (Fase 3), testes (Fase 4) e os arquivos de deploy (Fase 5) também entregues.
 
 - O servidor HTTP está implementado em Go (biblioteca padrão), com os 4 endpoints do contrato.
 - Estado em memória é a fonte de verdade das consultas; persistência atômica em arquivo JSON.
-- Autenticação por `Authorization: Bearer <token>` (token compartilhado via `RELAY_TOKEN`; ver seção 18).
+- Sem autenticação própria: os endpoints respondem sem `Authorization` e o relay deve operar somente na rede privada (ver seção 13).
 - Testes abrangentes (unitários, HTTP, persistência, concorrência e privacidade dos logs) passam com `go test -race`.
 - Deploy via Docker/Compose em `deploy/` (ver seção 18); pendente o deploy real no homelab e a integração com o cliente Hearthlane (Fase 6).
 - O repositório contém somente o relay. O `Dockerfile` e o `compose.yml` na raiz pertencem ao ambiente de desenvolvimento do OpenCode, não ao relay.

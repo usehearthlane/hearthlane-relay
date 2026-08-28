@@ -4,6 +4,3 @@
 
 # Relay default state file (contains sensitive location data)
 state.json
-
-# Compose secrets (never commit tokens)
-deploy/.env

@@ -11,7 +11,6 @@ services:
       RELAY_BIND: "0.0.0.0"
       RELAY_PORT: "8080"
       RELAY_DATA_FILE: "/data/state.json"
-      RELAY_TOKEN: ${RELAY_TOKEN:?set RELAY_TOKEN in the environment or deploy/.env}
     volumes:
       - relay-data:/data
 

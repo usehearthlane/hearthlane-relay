@@ -27,10 +27,6 @@ services:
       GOCACHE: /workspace/.cache/go-build
       GOPATH: /workspace/.cache/go
 
-      RELEASE_STORE_FILE: /run/secrets/hearthlane_playstore.jks
-      RELEASE_STORE_PASSWORD: ${RELEASE_STORE_PASSWORD}
-      RELEASE_KEY_ALIAS: ${RELEASE_KEY_ALIAS}
-      RELEASE_KEY_PASSWORD: ${RELEASE_KEY_PASSWORD}
       GH_TOKEN: ${GH_TOKEN}
 
     volumes:
